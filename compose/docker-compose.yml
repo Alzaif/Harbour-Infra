@@ -1,0 +1,364 @@
+name: harbour
+
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: harbour-traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    # Host ports and API socket are set in docker-compose.docker.yml or docker-compose.podman.yml
+    volumes:
+      - ../traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik-dashboard.rule=Host(`traefik.harbour.local`)
+      - traefik.http.routers.traefik-dashboard.entrypoints=websecure
+      - traefik.http.routers.traefik-dashboard.tls=true
+      - traefik.http.routers.traefik-dashboard.service=api@internal
+
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: harbour-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-harbour}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-harbour}
+    volumes:
+      - harbour-postgres-data:/var/lib/postgresql/data
+    networks:
+      - harbour-net
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-harbour} -d ${POSTGRES_DB:-harbour}']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  portcullis:
+    image: harbour/portcullis:${PORTCULLIS_VERSION:-local}
+    container_name: harbour-portcullis
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORTCULLIS_ISSUER: ${PORTCULLIS_ISSUER:-https://harbour.local}
+      PORT: 3000
+      NODE_ENV: production
+      IDP_MODE: ${IDP_MODE:-local}
+      DATABASE_URL: postgres://${POSTGRES_USER:-harbour}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-harbour}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:-.harbour.local}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
+      AUTH_STATE_TTL_SECONDS: ${AUTH_STATE_TTL_SECONDS:-600}
+      REQUIRE_HTTPS_FORWARDED_PROTO: ${REQUIRE_HTTPS_FORWARDED_PROTO:-true}
+      PORTCULLIS_CLIENTS_PATH: /app/config/clients.docker.json
+      HARBOUR_APPS_PATH: /app/config/harbour-apps.json
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+    # harbour-apps.json is baked into the Portcullis image (portcullis/config/). Do not bind-mount
+    # without :ro,z on Podman — SELinux causes EACCES on /app/config/harbour-apps.json.
+    networks:
+      - harbour-net
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "node -e \"fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.harbour-forwardauth.forwardauth.address=http://portcullis:3000/auth/forward
+      - traefik.http.middlewares.harbour-forwardauth.forwardauth.authResponseHeaders=X-Harbour-User-Id,X-Harbour-Email,X-Harbour-Scopes,X-Harbour-Display-Name
+      - traefik.http.middlewares.harbour-forwardauth.forwardauth.authRequestHeaders=Cookie,Authorization
+      - traefik.http.middlewares.harbour-forwardauth.forwardauth.trustForwardHeader=true
+      - traefik.http.middlewares.harbour-security-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.harbour-security-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.harbour-security-headers.headers.stsPreload=true
+      - traefik.http.middlewares.harbour-security-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.harbour-security-headers.headers.frameDeny=true
+      - traefik.http.middlewares.harbour-security-headers.headers.referrerPolicy=no-referrer
+      - traefik.http.middlewares.harbour-proxy-token.headers.customRequestHeaders.X-Harbour-Proxy-Token=${HARBOUR_PROXY_TOKEN:-harbour-dev-proxy-token}
+      - traefik.http.routers.portcullis.rule=Host(`harbour.local`) && (PathPrefix(`/oauth`) || PathPrefix(`/auth`) || PathPrefix(`/.well-known`))
+      - traefik.http.routers.portcullis.entrypoints=websecure
+      - traefik.http.routers.portcullis.tls=true
+      - traefik.http.routers.portcullis.middlewares=harbour-security-headers@docker
+      - traefik.http.routers.portcullis.priority=100
+      - traefik.http.services.portcullis.loadbalancer.server.port=3000
+
+  harbour-platform-ui:
+    image: harbour/harbour-platform-ui:${UI_VERSION:-local}
+    container_name: harbour-platform-ui
+    restart: unless-stopped
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.harbour-ui.rule=Host(`harbour.local`)
+      - traefik.http.routers.harbour-ui.entrypoints=websecure
+      - traefik.http.routers.harbour-ui.tls=true
+      - traefik.http.routers.harbour-ui.middlewares=harbour-security-headers@docker
+      - traefik.http.routers.harbour-ui.priority=1
+      - traefik.http.services.harbour-ui.loadbalancer.server.port=80
+
+  harbour-stack:
+    image: harbour/harbour-stack:${STACK_VERSION:-local}
+    container_name: harbour-stack
+    restart: unless-stopped
+    environment:
+      PORT: 3010
+      NODE_ENV: production
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      HARBOUR_APPS_PATH: /app/config/harbour-apps.json
+      HOST_DISK_PATH: ${STACK_HOST_DISK_PATH:-}
+    networks:
+      - harbour-net
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "node -e \"fetch('http://127.0.0.1:3010/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.harbour-stack.rule=Host(`harbour.local`) && PathPrefix(`/api/stack`)
+      - traefik.http.routers.harbour-stack.entrypoints=websecure
+      - traefik.http.routers.harbour-stack.tls=true
+      - traefik.http.routers.harbour-stack.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.routers.harbour-stack.priority=50
+      - traefik.http.services.harbour-stack.loadbalancer.server.port=3010
+
+  harbour-notes:
+    image: harbour/harbour-notes:${NOTES_VERSION:-local}
+    container_name: harbour-notes
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      TRUST_GATEWAY_HEADERS: "true"
+      NOTES_DB_PATH: /data/notes.db
+      NOTES_DATA_DIR: /data
+    volumes:
+      - harbour-notes-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.notes.rule=Host(`notes.harbour.local`)
+      - traefik.http.routers.notes.entrypoints=websecure
+      - traefik.http.routers.notes.tls=true
+      - traefik.http.routers.notes.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.services.notes.loadbalancer.server.port=80
+
+  harbour-docs:
+    image: harbour/harbour-docs:${DOCS_VERSION:-local}
+    container_name: harbour-docs
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      TRUST_GATEWAY_HEADERS: "true"
+      DOCS_DB_PATH: /data/docs.db
+      DOCS_DATA_DIR: /data
+      EXPORT_PDF_ENABLED: "true"
+      CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium-browser
+    volumes:
+      - harbour-docs-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.docs.rule=Host(`docs.harbour.local`)
+      - traefik.http.routers.docs.entrypoints=websecure
+      - traefik.http.routers.docs.tls=true
+      - traefik.http.routers.docs.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.services.docs.loadbalancer.server.port=80
+
+  harbour-warehouse:
+    image: harbour/harbour-warehouse:${WAREHOUSE_VERSION:-local}
+    container_name: harbour-warehouse
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      TRUST_GATEWAY_HEADERS: "true"
+      WAREHOUSE_DB_PATH: /data/warehouse.db
+      WAREHOUSE_DATA_DIR: /data
+      MAX_UPLOAD_BYTES: ${WAREHOUSE_MAX_UPLOAD_BYTES:-524288000}
+    volumes:
+      - harbour-warehouse-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.warehouse.rule=Host(`warehouse.harbour.local`)
+      - traefik.http.routers.warehouse.entrypoints=websecure
+      - traefik.http.routers.warehouse.tls=true
+      - traefik.http.routers.warehouse.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.services.warehouse.loadbalancer.server.port=80
+      - harbour.service.id=warehouse
+
+  harbour-gym:
+    image: harbour/harbour-gym:${GYM_VERSION:-local}
+    container_name: harbour-gym
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      TRUST_GATEWAY_HEADERS: "true"
+      GYM_DB_PATH: /data/gym.db
+      GYM_DATA_DIR: /data
+    volumes:
+      - harbour-gym-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.gym.rule=Host(`gym.harbour.local`)
+      - traefik.http.routers.gym.entrypoints=websecure
+      - traefik.http.routers.gym.tls=true
+      - traefik.http.routers.gym.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.services.gym.loadbalancer.server.port=80
+
+  harbour-recipes:
+    image: harbour/harbour-recipes:${RECIPES_VERSION:-local}
+    container_name: harbour-recipes
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      TRUST_GATEWAY_HEADERS: "true"
+      RECIPES_DB_PATH: /data/recipes.db
+      RECIPES_DATA_DIR: /data
+    volumes:
+      - harbour-recipes-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.recipes.rule=Host(`recipes.harbour.local`)
+      - traefik.http.routers.recipes.entrypoints=websecure
+      - traefik.http.routers.recipes.tls=true
+      - traefik.http.routers.recipes.middlewares=harbour-forwardauth@docker,harbour-security-headers@docker
+      - traefik.http.services.recipes.loadbalancer.server.port=80
+      - harbour.service.id=recipes
+
+  harbour-chat:
+    image: harbour/harbour-chat:${CHAT_VERSION:-local}
+    container_name: harbour-chat
+    restart: unless-stopped
+    depends_on:
+      portcullis:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      TRUST_GATEWAY_HEADERS: "true"
+      CHAT_REQUIRE_HTTPS_FORWARDED_PROTO: "true"
+      CHAT_TRUSTED_PROXY_TOKEN: ${HARBOUR_PROXY_TOKEN:-harbour-dev-proxy-token}
+      CHAT_MASTER_KEY_B64: ${CHAT_MASTER_KEY_B64:-QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=}
+      CHAT_MASTER_KEY_ID: ${CHAT_MASTER_KEY_ID:-chat-kek-v1}
+      CHAT_ENABLE_SECURITY_AUDIT_LOG: "true"
+      CHAT_QUARANTINE_SUSPICIOUS_ATTACHMENTS: "true"
+      CHAT_DB_PATH: /data/chat.db
+      CHAT_DATA_DIR: /data
+      CHAT_VOICE_SFU_BASE_URL: ${CHAT_VOICE_SFU_BASE_URL:-http://harbour-chat-sfu:4000}
+      CHAT_VOICE_TURN_URLS: ${CHAT_VOICE_TURN_URLS:-stun:turn.harbour.local:13478,turn:turn.harbour.local:13478?transport=udp}
+      CHAT_VOICE_TURN_SECRET: ${TURN_STATIC_AUTH_SECRET:-harbour-dev-turn-secret}
+      CHAT_VOICE_TURN_TTL_SECONDS: ${CHAT_VOICE_TURN_TTL_SECONDS:-3600}
+      CHAT_PORTCULLIS_FORWARD_URL: http://harbour-portcullis:3000/auth/forward
+      CHAT_FORWARD_AUTH_HOST: chat.harbour.local
+      RUST_LOG: info
+    volumes:
+      - harbour-chat-data:/data
+    networks:
+      - harbour-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.chat.rule=Host(`chat.harbour.local`)
+      - traefik.http.routers.chat-ws.rule=Host(`chat.harbour.local`) && Path(`/api/ws`)
+      - traefik.http.routers.chat-ws.entrypoints=websecure
+      - traefik.http.routers.chat-ws.tls=true
+      - traefik.http.routers.chat-ws.priority=200
+      - traefik.http.routers.chat-ws.middlewares=harbour-proxy-token@docker
+      - traefik.http.routers.chat-ws.service=chat
+      - traefik.http.routers.chat.entrypoints=websecure
+      - traefik.http.routers.chat.tls=true
+      - traefik.http.routers.chat.middlewares=harbour-forwardauth@docker,harbour-proxy-token@docker,harbour-security-headers@docker
+      - traefik.http.routers.chat.priority=100
+      - traefik.http.services.chat.loadbalancer.server.port=80
+
+  harbour-chat-sfu:
+    image: harbour/harbour-chat-sfu:${CHAT_SFU_VERSION:-local}
+    container_name: harbour-chat-sfu
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      SFU_ANNOUNCED_IP: ${SFU_ANNOUNCED_IP:-127.0.0.1}
+      SFU_RTC_MIN_PORT: ${CHAT_SFU_RTP_UDP_START:-14050}
+      SFU_RTC_MAX_PORT: ${CHAT_SFU_RTP_UDP_END:-14150}
+    networks:
+      - harbour-net
+    ports:
+      - ${CHAT_SFU_HTTP_PORT:-14000}:4000
+      - ${CHAT_SFU_RTP_UDP_START:-14050}-${CHAT_SFU_RTP_UDP_END:-14150}:${CHAT_SFU_RTP_UDP_START:-14050}-${CHAT_SFU_RTP_UDP_END:-14150}/udp
+
+  harbour-turn:
+    image: docker.io/coturn/coturn:4.6.3
+    container_name: harbour-turn
+    restart: unless-stopped
+    command:
+      - -n
+      - --log-file=stdout
+      - --realm=harbour.local
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_STATIC_AUTH_SECRET:-harbour-dev-turn-secret}
+      - --total-quota=100
+      - --no-multicast-peers
+      - --min-port=${TURN_RELAY_MIN_PORT:-14200}
+      - --max-port=${TURN_RELAY_MAX_PORT:-14300}
+    networks:
+      - harbour-net
+    ports:
+      - ${TURN_LISTEN_PORT:-13478}:3478
+      - ${TURN_RELAY_MIN_PORT:-14200}-${TURN_RELAY_MAX_PORT:-14300}:${TURN_RELAY_MIN_PORT:-14200}-${TURN_RELAY_MAX_PORT:-14300}/udp
+
+volumes:
+  harbour-postgres-data:
+  harbour-notes-data:
+  harbour-docs-data:
+  harbour-gym-data:
+  harbour-recipes-data:
+  harbour-warehouse-data:
+  harbour-chat-data:
+
+networks:
+  harbour-net:
+    name: harbour-net

@@ -1,0 +1,18 @@
+# Docker overlay — privileged ports 80/443 (scripts/docker/up.sh only).
+
+services:
+  traefik:
+    ports:
+      - '80:80'
+      - '443:443'
+      - '8080:8080'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../traefik/traefik.yml:/etc/traefik/traefik.yml:ro,z
+
+  harbour-stack:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker:/host-docker:ro
+    environment:
+      STACK_HOST_DISK_PATH: /host-docker

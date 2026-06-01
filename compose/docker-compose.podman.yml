@@ -1,0 +1,27 @@
+# Podman overlay — rootless-friendly defaults (scripts/up.sh).
+# Not used by scripts/docker/up.sh (privileged 80/443 there).
+#
+# PODMAN_SOCKET — auto-detected by scripts/up.sh
+# HOST_*_PORT — host bindings >= 1024 (rootless cannot bind 80/443)
+# Browser: https://harbour.local:${HOST_HTTPS_PORT:-8443}
+
+services:
+  traefik:
+    # Rootless Podman + SELinux: allow reading config (:z) and talking to the API socket.
+    security_opt:
+      - label=disable
+    ports:
+      - ${HOST_HTTP_PORT:-8081}:80
+      - ${HOST_HTTPS_PORT:-8443}:443
+      - ${HOST_TRAEFIK_DASHBOARD_PORT:-9080}:8080
+    volumes:
+      - ${PODMAN_SOCKET:?Set PODMAN_SOCKET in compose/.env or run scripts/up.sh}:/var/run/docker.sock:ro,z
+      - ../traefik/traefik.podman.yml:/etc/traefik/traefik.yml:ro,z
+
+  harbour-stack:
+    security_opt:
+      - label=disable
+    volumes:
+      - ${PODMAN_SOCKET:?Set PODMAN_SOCKET in compose/.env or run scripts/up.sh}:/var/run/docker.sock:ro,z
+    # Host disk stats (df on /host-docker) are optional. Do not mount
+    # /var/lib/containers/storage here — rootless Podman cannot read it.

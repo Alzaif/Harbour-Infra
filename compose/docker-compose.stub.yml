@@ -1,0 +1,13 @@
+# Optional overlay: stub IdP (dev user picker) instead of local email/password login.
+# Postgres still runs; Portcullis uses in-memory sessions and ignores DATABASE_URL.
+#
+# Usage:
+#   podman compose -f docker-compose.yml -f docker-compose.podman.yml \
+#     -f docker-compose.build.yml -f docker-compose.stub.yml up -d
+
+services:
+  portcullis:
+    environment:
+      IDP_MODE: stub
+      DATABASE_URL: ""
+      RUN_MIGRATIONS: "false"

@@ -1,0 +1,76 @@
+services:
+  portcullis:
+    build:
+      context: ${HARBOUR_ROOT}/portcullis
+      dockerfile: Dockerfile
+    image: harbour/portcullis:local
+
+  harbour-platform-ui:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-platform-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER:-https://harbour.local}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-harbour-shell}
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-platform-ui:local
+
+  harbour-stack:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-stack
+      dockerfile: Dockerfile
+    image: harbour/harbour-stack:local
+
+  harbour-notes:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-notes
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-notes:local
+
+  harbour-docs:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-docs
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-docs:local
+
+  harbour-gym:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-gym
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-gym:local
+
+  harbour-recipes:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-recipes
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-recipes:local
+
+  harbour-warehouse:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-warehouse
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-warehouse:local
+
+  harbour-chat:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-chat
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-chat:local
+
+  harbour-chat-sfu:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-chat-sfu
+      dockerfile: Dockerfile
+    image: harbour/harbour-chat-sfu:local

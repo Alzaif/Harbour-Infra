@@ -1,0 +1,11 @@
+{
+  "apps": [
+    { "id": "notes", "host": "notes.harbour.local", "scope": "app:notes" },
+    { "id": "docs", "host": "docs.harbour.local", "scope": "app:docs" },
+    { "id": "tasks", "host": "tasks.harbour.local", "scope": "app:tasks" },
+    { "id": "recipes", "host": "recipes.harbour.local", "scope": "app:recipes" },
+    { "id": "gym", "host": "gym.harbour.local", "scope": "app:gym" },
+    { "id": "chat", "host": "chat.harbour.local", "scope": "app:chat" },
+    { "id": "warehouse", "host": "warehouse.harbour.local", "scope": "app:warehouse" }
+  ]
+}

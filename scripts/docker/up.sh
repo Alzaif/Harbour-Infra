@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Start the Harbour stack with Docker Compose.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/compose-runtime.sh
+source "${SCRIPT_DIR}/../lib/compose-runtime.sh"
+
+harbour_ensure_env
+harbour_compose docker up --build -d "$@"

@@ -1,0 +1,11 @@
+# Example production overlay: pull pre-built images from a registry instead of building locally.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
+#
+# services:
+#   portcullis:
+#     image: ghcr.io/your-org/portcullis:${PORTCULLIS_VERSION}
+#   harbour-platform-ui:
+#     image: ghcr.io/your-org/harbour-platform-ui:${UI_VERSION}
+#   harbour-notes:
+#     image: ghcr.io/your-org/harbour-notes:${NOTES_VERSION}
