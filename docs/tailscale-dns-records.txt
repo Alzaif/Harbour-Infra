@@ -1,0 +1,6 @@
+# Harbour uses path-based routing on a single hostname (MagicDNS machine name)
+# Rename Tailscale machine to match shell host (e.g. harbour.<tailnet>.ts.net)
+# Shell: https://harbour.tail792ed9.ts.net:8443/
+# Apps:  https://harbour.tail792ed9.ts.net:8443/{{app}}  (notes, chat, docs, …)
+
+# Tailnet IP (reference): 100.101.200.5

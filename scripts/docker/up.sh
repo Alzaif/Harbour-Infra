@@ -7,4 +7,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/compose-runtime.sh"
 
 harbour_ensure_env
+harbour_maybe_generate_public_config
 harbour_compose docker up --build -d "$@"

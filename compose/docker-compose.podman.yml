@@ -16,7 +16,7 @@ services:
       - ${HOST_TRAEFIK_DASHBOARD_PORT:-9080}:8080
     volumes:
       - ${PODMAN_SOCKET:?Set PODMAN_SOCKET in compose/.env or run scripts/up.sh}:/var/run/docker.sock:ro,z
-      - ../traefik/traefik.podman.yml:/etc/traefik/traefik.yml:ro,z
+      - ../traefik/${HARBOUR_TRAEFIK_CONFIG:-traefik.podman.yml}:/etc/traefik/traefik.yml:ro,z
 
   harbour-stack:
     security_opt:

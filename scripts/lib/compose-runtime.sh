@@ -21,6 +21,43 @@ harbour_ensure_env() {
   fi
 }
 
+harbour_load_deploy_profile() {
+  local env_file key value
+  env_file="$(harbour_compose_dir)/.env"
+  export HARBOUR_DEPLOY_PROFILE="${HARBOUR_DEPLOY_PROFILE:-local}"
+  [[ -f "${env_file}" ]] || return 0
+  key="$(grep -E '^HARBOUR_DEPLOY_PROFILE=' "${env_file}" | tail -1 || true)"
+  [[ -n "${key}" ]] || return 0
+  value="${key#HARBOUR_DEPLOY_PROFILE=}"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  export HARBOUR_DEPLOY_PROFILE="${value:-local}"
+}
+
+harbour_load_compose_env() {
+  local env_file
+  env_file="$(harbour_compose_dir)/.env"
+  [[ -f "${env_file}" ]] || return 0
+  set -a
+  # shellcheck disable=SC1090
+  source "${env_file}"
+  set +a
+}
+
+harbour_maybe_generate_public_config() {
+  harbour_load_deploy_profile
+  if [[ "${HARBOUR_DEPLOY_PROFILE}" != "tailscale" ]]; then
+    return 0
+  fi
+  local script="$(harbour_infra_root)/scripts/generate-public-config.sh"
+  if [[ -x "${script}" ]]; then
+    echo "HARBOUR_DEPLOY_PROFILE=tailscale — running generate-public-config.sh"
+    "${script}"
+  fi
+}
+
 # Resolve Podman API socket (rootless vs rootful). Exports PODMAN_SOCKET.
 harbour_ensure_podman_socket() {
   if [[ -n "${PODMAN_SOCKET:-}" && -S "${PODMAN_SOCKET}" ]]; then
@@ -63,14 +100,15 @@ harbour_ensure_rootless_host_ports() {
   export HOST_HTTPS_PORT="${HOST_HTTPS_PORT:-8443}"
   export HOST_TRAEFIK_DASHBOARD_PORT="${HOST_TRAEFIK_DASHBOARD_PORT:-9080}"
 
-  local origin="https://harbour.local:${HOST_HTTPS_PORT}"
-  if [[ -z "${PORTCULLIS_ISSUER:-}" || "${PORTCULLIS_ISSUER}" == "https://harbour.local" ]]; then
+  local zone="${HARBOUR_DNS_ZONE:-harbour.local}"
+  local origin="https://${zone}:${HOST_HTTPS_PORT}"
+  if [[ -z "${PORTCULLIS_ISSUER:-}" || "${PORTCULLIS_ISSUER}" == "https://harbour.local" || "${PORTCULLIS_ISSUER}" == "https://${zone}" ]]; then
     export PORTCULLIS_ISSUER="${origin}"
   fi
-  if [[ -z "${VITE_OIDC_ISSUER:-}" || "${VITE_OIDC_ISSUER}" == "https://harbour.local" ]]; then
+  if [[ -z "${VITE_OIDC_ISSUER:-}" || "${VITE_OIDC_ISSUER}" == "https://harbour.local" || "${VITE_OIDC_ISSUER}" == "https://${zone}" ]]; then
     export VITE_OIDC_ISSUER="${origin}"
   fi
-  if [[ -z "${VITE_HARBOUR_SHELL_URL:-}" || "${VITE_HARBOUR_SHELL_URL}" == "https://harbour.local" ]]; then
+  if [[ -z "${VITE_HARBOUR_SHELL_URL:-}" || "${VITE_HARBOUR_SHELL_URL}" == "https://harbour.local" || "${VITE_HARBOUR_SHELL_URL}" == "https://${zone}" ]]; then
     export VITE_HARBOUR_SHELL_URL="${origin}"
   fi
 
@@ -96,6 +134,10 @@ harbour_persist_podman_socket_env() {
 harbour_compose_file_args() {
   local runtime="${1:?runtime must be podman or docker}"
   echo -f docker-compose.yml -f docker-compose.build.yml
+  harbour_load_deploy_profile
+  if [[ "${HARBOUR_DEPLOY_PROFILE}" == "tailscale" ]]; then
+    echo -f docker-compose.tailscale.yml
+  fi
   if [[ "${runtime}" == "podman" ]]; then
     echo -f docker-compose.podman.yml
   elif [[ "${runtime}" == "docker" ]]; then
@@ -124,6 +166,7 @@ harbour_compose() {
   fi
 
   if [[ "${runtime}" == "podman" ]]; then
+    harbour_load_compose_env
     harbour_ensure_podman_socket || return 1
     harbour_persist_podman_socket_env
     harbour_ensure_rootless_host_ports

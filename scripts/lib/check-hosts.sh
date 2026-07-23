@@ -4,7 +4,23 @@ harbour_check_hosts() {
   local missing=()
   local host
 
-  for host in harbour.local notes.harbour.local traefik.harbour.local; do
+  # shellcheck source=compose-runtime.sh
+  if declare -F harbour_load_deploy_profile >/dev/null 2>&1; then
+    harbour_load_deploy_profile
+  elif [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/compose/.env" ]]; then
+    local env_file profile_line
+    env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/compose/.env"
+    profile_line="$(grep -E '^HARBOUR_DEPLOY_PROFILE=' "${env_file}" | tail -1 || true)"
+    export HARBOUR_DEPLOY_PROFILE="${profile_line#HARBOUR_DEPLOY_PROFILE=}"
+    export HARBOUR_DEPLOY_PROFILE="${HARBOUR_DEPLOY_PROFILE:-local}"
+  fi
+
+  if [[ "${HARBOUR_DEPLOY_PROFILE:-local}" == "tailscale" ]]; then
+    echo "HARBOUR_DEPLOY_PROFILE=tailscale — skipping /etc/hosts check (MagicDNS machine name)."
+    return 0
+  fi
+
+  for host in harbour.local traefik.harbour.local; do
     if ! getent hosts "${host}" >/dev/null 2>&1; then
       missing+=("${host}")
     fi

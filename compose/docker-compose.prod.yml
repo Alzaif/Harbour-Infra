@@ -9,3 +9,5 @@
 #     image: ghcr.io/your-org/harbour-platform-ui:${UI_VERSION}
 #   harbour-notes:
 #     image: ghcr.io/your-org/harbour-notes:${NOTES_VERSION}
+#   harbour-outline:
+#     image: ghcr.io/your-org/harbour-outline:${OUTLINE_VERSION}

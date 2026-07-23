@@ -1,0 +1,59 @@
+# Optional overlay when HARBOUR_DEPLOY_PROFILE=tailscale in compose/.env.
+# Primary settings live in .env (see .env.tailscale.example).
+# Run scripts/generate-public-config.sh before building images.
+#
+# Prerequisites (Tailscale admin → DNS):
+#   - MagicDNS enabled
+#   - HTTPS certificates enabled
+# Machine name must match HARBOUR_DNS_ZONE (e.g. harbour.<tailnet>.ts.net).
+#
+# Per-router tls.certresolver is required for Traefik to fetch Tailscale LE certs
+# (entrypoint-level certResolver alone is not sufficient).
+
+services:
+  traefik:
+    volumes:
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+
+  portcullis:
+    labels:
+      - traefik.http.routers.portcullis.tls.certresolver=harbour-tailscale
+
+  harbour-platform-ui:
+    labels:
+      - traefik.http.routers.harbour-ui.tls.certresolver=harbour-tailscale
+
+  harbour-stack:
+    labels:
+      - traefik.http.routers.harbour-stack.tls.certresolver=harbour-tailscale
+
+  harbour-notes:
+    labels:
+      - traefik.http.routers.notes.tls.certresolver=harbour-tailscale
+
+  harbour-docs:
+    labels:
+      - traefik.http.routers.docs.tls.certresolver=harbour-tailscale
+
+  harbour-warehouse:
+    labels:
+      - traefik.http.routers.warehouse.tls.certresolver=harbour-tailscale
+
+  harbour-gym:
+    labels:
+      - traefik.http.routers.gym.tls.certresolver=harbour-tailscale
+
+  harbour-recipes:
+    labels:
+      - traefik.http.routers.recipes.tls.certresolver=harbour-tailscale
+
+  harbour-outline:
+    labels:
+      - traefik.http.routers.outline.tls.certresolver=harbour-tailscale
+
+  harbour-chat:
+    labels:
+      - traefik.http.routers.board.tls.certresolver=harbour-tailscale
+      - traefik.http.routers.board-api.tls.certresolver=harbour-tailscale
+      - traefik.http.routers.board-ws.tls.certresolver=harbour-tailscale
+      - traefik.http.routers.board-legacy.tls.certresolver=harbour-tailscale

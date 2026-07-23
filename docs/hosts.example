@@ -1,13 +1,4 @@
 # Add to /etc/hosts (Linux/macOS) or C:\Windows\System32\drivers\etc\hosts (Windows)
+# All satellite apps are served under path prefixes on the shell host.
 127.0.0.1 harbour.local
-127.0.0.1 notes.harbour.local
-127.0.0.1 docs.harbour.local
 127.0.0.1 traefik.harbour.local
-# Optional — reserved for future services
-127.0.0.1 tasks.harbour.local
-127.0.0.1 recipes.harbour.local
-127.0.0.1 gym.harbour.local
-127.0.0.1 chat.harbour.local
-127.0.0.1 warehouse.harbour.local
-127.0.0.1 sfu.harbour.local
-127.0.0.1 turn.harbour.local

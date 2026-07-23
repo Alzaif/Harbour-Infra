@@ -1,11 +1,52 @@
 {
   "apps": [
-    { "id": "notes", "host": "notes.harbour.local", "scope": "app:notes" },
-    { "id": "docs", "host": "docs.harbour.local", "scope": "app:docs" },
-    { "id": "tasks", "host": "tasks.harbour.local", "scope": "app:tasks" },
-    { "id": "recipes", "host": "recipes.harbour.local", "scope": "app:recipes" },
-    { "id": "gym", "host": "gym.harbour.local", "scope": "app:gym" },
-    { "id": "chat", "host": "chat.harbour.local", "scope": "app:chat" },
-    { "id": "warehouse", "host": "warehouse.harbour.local", "scope": "app:warehouse" }
+    {
+      "id": "notes",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/notes",
+      "scope": "app:notes"
+    },
+    {
+      "id": "docs",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/docs",
+      "scope": "app:docs"
+    },
+    {
+      "id": "tasks",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/tasks",
+      "scope": "app:tasks"
+    },
+    {
+      "id": "recipes",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/recipes",
+      "scope": "app:recipes"
+    },
+    {
+      "id": "outline",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/outline",
+      "scope": "app:outline"
+    },
+    {
+      "id": "gym",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/gym",
+      "scope": "app:gym"
+    },
+    {
+      "id": "board",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/board",
+      "scope": "app:board"
+    },
+    {
+      "id": "warehouse",
+      "host": "harbour.tail792ed9.ts.net",
+      "pathPrefix": "/warehouse",
+      "scope": "app:warehouse"
+    }
   ]
 }

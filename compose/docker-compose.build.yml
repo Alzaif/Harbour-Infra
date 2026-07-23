@@ -53,6 +53,14 @@ services:
         VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
     image: harbour/harbour-recipes:local
 
+  harbour-outline:
+    build:
+      context: ${HARBOUR_ROOT}/harbour-outline
+      dockerfile: Dockerfile
+      args:
+        VITE_HARBOUR_SHELL_URL: ${VITE_HARBOUR_SHELL_URL:-https://harbour.local}
+    image: harbour/harbour-outline:local
+
   harbour-warehouse:
     build:
       context: ${HARBOUR_ROOT}/harbour-warehouse

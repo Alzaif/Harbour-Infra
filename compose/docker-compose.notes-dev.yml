@@ -1,0 +1,51 @@
+services:
+  minio:
+    image: docker.io/minio/minio:latest
+    container_name: harbour-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${NOTES_S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${NOTES_S3_SECRET_ACCESS_KEY:-minioadmin}
+    volumes:
+      - harbour-minio-data:/data
+    networks:
+      - harbour-net
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  minio-init:
+    image: docker.io/minio/mc:latest
+    container_name: harbour-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 2;
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb -p local/harbour-notes-published || true;
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${NOTES_S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${NOTES_S3_SECRET_ACCESS_KEY:-minioadmin}
+    networks:
+      - harbour-net
+
+  harbour-notes:
+    environment:
+      NOTES_USE_S3_PUBLISH: "true"
+      NOTES_S3_ENDPOINT: http://minio:9000
+      NOTES_S3_BUCKET: harbour-notes-published
+      NOTES_S3_ACCESS_KEY_ID: ${NOTES_S3_ACCESS_KEY_ID:-minioadmin}
+      NOTES_S3_SECRET_ACCESS_KEY: ${NOTES_S3_SECRET_ACCESS_KEY:-minioadmin}
+      NOTES_S3_FORCE_PATH_STYLE: "true"
+      NOTES_CONTENT_REPO_PATH: /data/content-repo
+      NOTES_GITHUB_REPO: ${NOTES_GITHUB_REPO:?Set NOTES_GITHUB_REPO in compose/.env}
+      NOTES_GITHUB_TOKEN: ${NOTES_GITHUB_TOKEN:?Set NOTES_GITHUB_TOKEN in compose/.env}
+      NOTES_GITHUB_BASE_BRANCH: ${NOTES_GITHUB_BASE_BRANCH:-main}
+      NOTES_PUBLISH_STORAGE_DIR: /data/published
+      NOTES_REGISTRY_DB_PATH: /data/registry.db
+
+volumes:
+  harbour-minio-data:

@@ -1,0 +1,10 @@
+# Example — copy values from compose/.env after running generate-public-config.sh
+# Generated file: config/dnsmasq/harbour-tailscale.conf (gitignored)
+
+interface=tailscale0
+bind-interfaces
+listen-address=100.64.0.1
+no-resolv
+domain-needed
+bogus-priv
+address=/harbour.tailabc123.ts.net/100.64.0.1
