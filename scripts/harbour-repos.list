@@ -1,0 +1,19 @@
+# Canonical Harbour satellite repositories.
+# Format: <local-directory> <GitHub-repo-name>
+# Clone URL: https://github.com/${HARBOUR_GIT_ORG:-Alzaif}/<GitHub-repo-name>.git
+# (override org with HARBOUR_GIT_ORG; use --ssh for git@github.com:…)
+#
+# Used by scripts/git-pull-all.sh to clone missing checkouts, then pull.
+
+harbour-chat          Harbour-Chat
+harbour-chat-sfu      Harbour-Chat-SFU
+harbour-docs          Harbour-Docs
+harbour-gym           Harbour-Gym
+harbour-infra         Harbour-Infra
+harbour-notes         Harbour-Notes
+# harbour-outline     Harbour-Outline  # ignored for now (local path may not be a git checkout)
+harbour-platform-ui   Harbour-UI
+harbour-recipes       Harbour-Recipes
+harbour-stack         Harbour-Stack
+harbour-warehouse     Harbour-Warehouse
+portcullis            Portcullis

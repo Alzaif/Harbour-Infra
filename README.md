@@ -49,15 +49,18 @@ chmod +x scripts/*.sh scripts/docker/*.sh scripts/lib/*.sh
 
 ### Multi-repo git sync
 
-Sibling app repos are pulled with:
+Clone missing satellites (from `scripts/harbour-repos.list`) and pull all Harbour repos:
 
 ```bash
-# From workspace root (or from harbour-infra/)
+# From workspace root
 ./scripts/git-pull-all.sh --dry-run
 ./scripts/git-pull-all.sh
+
+# From this repo (wrapper → same script)
+./scripts/git-pull-all.sh --ssh
 ```
 
-Commit/push across all satellites remains at the workspace root: `../scripts/git-commit-push-all.sh` (see [scripts/README.md](../scripts/README.md)).
+Commit/push across satellites: `../scripts/git-commit-push-all.sh` (see [scripts/README.md](../scripts/README.md)).
 
 ## Quick start (Docker)
 

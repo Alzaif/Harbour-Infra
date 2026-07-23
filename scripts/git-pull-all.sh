@@ -1,52 +1,57 @@
 #!/usr/bin/env bash
-# Pull every Harbour satellite repo under the workspace root in parallel.
-#
-# Lives in harbour-infra but operates on sibling checkouts (and optionally the
-# workspace umbrella root). Discovery matches scripts/git-commit-push-all.sh.
+# Clone (if missing) and pull every Harbour satellite repo under the workspace root.
 #
 # Usage:
 #   ./scripts/git-pull-all.sh
 #   ./scripts/git-pull-all.sh --dry-run
-#   ./scripts/git-pull-all.sh --include-root
+#   ./scripts/git-pull-all.sh --skip-root
 #   ./scripts/git-pull-all.sh --only harbour-chat,harbour-infra
 #   ./scripts/git-pull-all.sh --ff-only
+#   ./scripts/git-pull-all.sh --ssh
 #
-# Run from the workspace root:
-#   ./harbour-infra/scripts/git-pull-all.sh
-# Or from harbour-infra:
-#   ./scripts/git-pull-all.sh
+# Repo list: scripts/harbour-repos.list (local dir + GitHub repo name).
+# Missing directories are cloned from GitHub; existing .git checkouts are pulled.
+# Extra local child repos with .git (not in the list) are also pulled.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# harbour-infra/scripts → harbour-infra → workspace root
-ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_LIST="${ROOT_DIR}/scripts/harbour-repos.list"
+GIT_ORG="${HARBOUR_GIT_ORG:-Alzaif}"
 
 DRY_RUN=0
-INCLUDE_ROOT=0
+INCLUDE_ROOT=1
 SEQUENTIAL=0
 FF_ONLY=0
+USE_SSH=0
 ONLY_FILTER=""
 
 usage() {
   cat <<'EOF'
-Pull all Harbour child git repositories in parallel.
+Clone missing Harbour repos (from the canonical list) and pull all of them.
 
 Usage:
   git-pull-all.sh [options]
 
+Repo list:
+  scripts/harbour-repos.list — one "local-dir  GitHub-repo-name" per line.
+  Clone base: https://github.com/$HARBOUR_GIT_ORG/<repo>.git
+  (default org: Alzaif; override with HARBOUR_GIT_ORG; --ssh uses git@github.com:…)
+
 Options:
   --dry-run             Print actions without network or git writes
-  --include-root        Include the workspace root repo (Harbour umbrella)
-  --only LIST           Comma-separated repo directory names (e.g. harbour-chat,portcullis)
+  --skip-root           Skip the workspace root umbrella repo
+  --include-root        Include the workspace root (default; pull only if it has a remote)
+  --only LIST           Comma-separated local directory names
   --ff-only             Use git pull --ff-only (fail instead of merging)
+  --ssh                 Clone/pull via SSH (git@github.com:ORG/REPO.git)
   --sequential          Run repos one at a time (easier to read logs)
   -h, --help            Show this help
 
 Examples:
-  ./harbour-infra/scripts/git-pull-all.sh
-  ./harbour-infra/scripts/git-pull-all.sh --dry-run
-  ./harbour-infra/scripts/git-pull-all.sh --only harbour-chat,harbour-infra
-  ./harbour-infra/scripts/git-pull-all.sh --include-root --ff-only
+  ./scripts/git-pull-all.sh
+  ./scripts/git-pull-all.sh --dry-run
+  ./scripts/git-pull-all.sh --only harbour-chat,harbour-infra
+  HARBOUR_GIT_ORG=Alzaif ./scripts/git-pull-all.sh --ssh
 EOF
 }
 
@@ -59,41 +64,139 @@ die() {
   exit 1
 }
 
-discover_repos() {
-  local repos=()
-  local entry name
+repo_label() {
+  local repo_path="$1"
+  if [[ "$repo_path" == "$ROOT_DIR" ]]; then
+    printf '%s\n' "$(basename "$ROOT_DIR")"
+  else
+    printf '%s\n' "$(basename "$repo_path")"
+  fi
+}
+
+clone_url_for() {
+  local github_repo="$1"
+  if [[ "$USE_SSH" -eq 1 ]]; then
+    printf 'git@github.com:%s/%s.git\n' "$GIT_ORG" "$github_repo"
+  else
+    printf 'https://github.com/%s/%s.git\n' "$GIT_ORG" "$github_repo"
+  fi
+}
+
+only_matches() {
+  local name="$1"
+  [[ -z "$ONLY_FILTER" ]] && return 0
+  case ",${ONLY_FILTER}," in
+    *,"${name}",*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Populate CANONICAL_DIRS and CANONICAL_GITHUB associative arrays from the list file.
+load_repo_list() {
+  [[ -f "$REPO_LIST" ]] || die "missing repo list: ${REPO_LIST}"
+
+  declare -gA CANONICAL_GITHUB=()
+  declare -ga CANONICAL_ORDER=()
+
+  local line dir github
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$line" ]] && continue
+    # shellcheck disable=SC2086
+    set -- $line
+    dir="${1:-}"
+    github="${2:-}"
+    [[ -n "$dir" && -n "$github" ]] || die "invalid line in ${REPO_LIST}: ${line}"
+    CANONICAL_ORDER+=("$dir")
+    CANONICAL_GITHUB["$dir"]="$github"
+  done <"$REPO_LIST"
+
+  [[ "${#CANONICAL_ORDER[@]}" -gt 0 ]] || die "repo list is empty: ${REPO_LIST}"
+}
+
+# Ensure each canonical repo exists (clone if needed). Prints paths to process.
+prepare_repos() {
+  local dirs=()
+  local dir github path url name
+  local root_name
+  root_name="$(basename "$ROOT_DIR")"
 
   if [[ "$INCLUDE_ROOT" -eq 1 && -d "${ROOT_DIR}/.git" ]]; then
-    repos+=("$ROOT_DIR")
+    if [[ -z "$ONLY_FILTER" ]] || only_matches "$root_name" || only_matches "." || only_matches "Harbour"; then
+      dirs+=("$ROOT_DIR")
+    fi
   fi
 
-  for entry in "${ROOT_DIR}"/*/; do
-    [[ -d "${entry}.git" ]] || continue
-    name="$(basename "${entry%/}")"
-    if [[ -n "$ONLY_FILTER" ]]; then
-      case ",${ONLY_FILTER}," in
-        *,"${name}",*) repos+=("${entry%/}") ;;
-      esac
+  for dir in "${CANONICAL_ORDER[@]}"; do
+    only_matches "$dir" || continue
+    github="${CANONICAL_GITHUB[$dir]}"
+    path="${ROOT_DIR}/${dir}"
+    url="$(clone_url_for "$github")"
+
+    if [[ -d "${path}/.git" ]]; then
+      dirs+=("$path")
+    elif [[ -e "$path" ]]; then
+      # stderr: stdout is the path list for the caller
+      log "[$dir] skip: path exists but is not a git checkout (remove or move it to clone)" >&2
     else
-      repos+=("${entry%/}")
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "[$dir] would: git clone ${url} ${path}" >&2
+        dirs+=("$path")
+      else
+        log "[$dir] cloning ${url}" >&2
+        git clone "$url" "$path"
+        dirs+=("$path")
+      fi
     fi
   done
 
-  if [[ "${#repos[@]}" -eq 0 ]]; then
-    die "no repositories found (use --include-root or check --only names)"
+  # Also pull any extra local child repos not in the canonical list
+  local entry
+  for entry in "${ROOT_DIR}"/*/; do
+    [[ -d "${entry}.git" ]] || continue
+    name="$(basename "${entry%/}")"
+    only_matches "$name" || continue
+    if [[ -z "${CANONICAL_GITHUB[$name]+x}" ]]; then
+      dirs+=("${entry%/}")
+    fi
+  done
+
+  if [[ "${#dirs[@]}" -eq 0 ]]; then
+    die "no repositories to process (check --only / harbour-repos.list)"
   fi
 
-  mapfile -t repos < <(printf '%s\n' "${repos[@]}" | sort)
-  printf '%s\n' "${repos[@]}"
+  # Deduplicate while preserving order
+  local -A seen=()
+  local -a unique=()
+  local p
+  for p in "${dirs[@]}"; do
+    [[ -n "${seen[$p]+x}" ]] && continue
+    seen["$p"]=1
+    unique+=("$p")
+  done
+
+  mapfile -t unique < <(printf '%s\n' "${unique[@]}" | sort)
+  printf '%s\n' "${unique[@]}"
 }
 
 pull_repo() {
   local repo_path="$1"
   local name
-  name="$(basename "$repo_path")"
+  name="$(repo_label "$repo_path")"
 
   (
     repo_log() { log "[$name] $*"; }
+
+    # Dry-run clone may list a path that does not exist yet
+    if [[ ! -d "$repo_path" ]]; then
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        repo_log "would: git pull (after clone)"
+        exit 0
+      fi
+      repo_log "skip: directory missing"
+      exit 2
+    fi
 
     cd "$repo_path"
 
@@ -146,6 +249,10 @@ parse_args() {
         DRY_RUN=1
         shift
         ;;
+      --skip-root)
+        INCLUDE_ROOT=0
+        shift
+        ;;
       --include-root)
         INCLUDE_ROOT=1
         shift
@@ -156,6 +263,10 @@ parse_args() {
         ;;
       --ff-only)
         FF_ONLY=1
+        shift
+        ;;
+      --ssh)
+        USE_SSH=1
         shift
         ;;
       --only)
@@ -175,15 +286,20 @@ parse_args() {
 
 main() {
   parse_args "$@"
+  load_repo_list
 
-  mapfile -t REPOS < <(discover_repos)
+  mapfile -t REPOS < <(prepare_repos)
 
   log "Harbour multi-repo pull"
-  log "  root:       ${ROOT_DIR}"
-  log "  repos:      ${#REPOS[@]}"
-  log "  dry-run:    ${DRY_RUN}"
-  log "  ff-only:    ${FF_ONLY}"
-  log "  parallel:   $([[ "$SEQUENTIAL" -eq 1 ]] && echo no || echo yes)"
+  log "  root:         ${ROOT_DIR}"
+  log "  list:         ${REPO_LIST}"
+  log "  org:          ${GIT_ORG}"
+  log "  repos:        ${#REPOS[@]}"
+  log "  dry-run:      ${DRY_RUN}"
+  log "  ff-only:      ${FF_ONLY}"
+  log "  ssh:          ${USE_SSH}"
+  log "  include-root: ${INCLUDE_ROOT}"
+  log "  parallel:     $([[ "$SEQUENTIAL" -eq 1 ]] && echo no || echo yes)"
   log ""
 
   local -a pids=()
@@ -192,7 +308,7 @@ main() {
   local failed=0
 
   for repo_path in "${REPOS[@]}"; do
-    name="$(basename "$repo_path")"
+    name="$(repo_label "$repo_path")"
     names+=("$name")
 
     if [[ "$SEQUENTIAL" -eq 1 ]]; then
